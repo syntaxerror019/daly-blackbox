@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block title %}History — BMS Black Box{% endblock %}
+{% block page_title %}<i class="bi bi-graph-up me-2" style="color:var(--accent)"></i>History & Analytics{% endblock %}
+
+{% block content %}
+
+<!-- ── Range bar ── -->
+<div class="bb-card mb-3">
+  <div class="bb-card-body py-2">
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <span style="font-size:.72rem;font-weight:600;color:var(--text-3)">RANGE</span>
+      {% for p,l in [('1h','1 Hour'),('6h','6 Hours'),('12h','12 Hours'),('24h','24 Hours'),('7d','7 Days'),('30d','30 Days'),('90d','90 Days')] %}
+      <a href="{{ url_for('history', range=p) }}"
+         class="range-btn {% if preset==p %}active{% endif %}">{{ l }}</a>
+      {% endfor %}
+      <span class="ms-auto mono" style="font-size:.72rem;color:var(--text-2)">{{ range_label }}</span>
+    </div>
+    <div class="mt-2 d-flex align-items-center gap-2 flex-wrap">
+      <span style="font-size:.72rem;font-weight:600;color:var(--text-3)">CUSTOM</span>
+      <form method="GET" class="d-flex gap-2 align-items-center flex-wrap">
+        <input type="datetime-local" name="start" class="form-control form-control-sm"
+               style="width:auto" value="{{ range_start[:16] }}">
+        <span style="color:var(--text-3)">→</span>
+        <input type="datetime-local" name="end" class="form-control form-control-sm"
+               style="width:auto" value="{{ range_end[:16] }}">
+        <button type="submit" class="range-btn">Apply</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ── Stats ── -->
+<div class="row g-3 mb-3">
+  {% set items = [
+    ('Min SOC','min_soc','%','battery','t-blue'),
+    ('Max SOC','max_soc','%','battery-full','t-green'),
+    ('Avg SOC','avg_soc','%','battery-half','t-blue'),
+    ('Min Voltage','min_voltage','V','lightning','t-blue'),
+    ('Max Voltage','max_voltage','V','lightning-charge','t-blue'),
+    ('Min Temp','min_temp','°C','thermometer-low','t-blue'),
+    ('Max Temp','max_temp','°C','thermometer-high','t-amber'),
+    ('Samples','samples','','database','t-blue'),
+  ] %}
+  {% for label,key,unit,icon,cls in items %}
+  <div class="col-6 col-md-3">
+    <div class="stat-tile {{ cls }}">
+      <div class="tile-icon"><i class="bi bi-{{ icon }}"></i></div>
+      <div class="stat-label">{{ label }}</div>
+      <div class="stat-value" style="font-size:1.6rem">
+        {% if stats.get(key) is not none %}{{ '%.1f'|format(stats[key]|float) }}{% else %}—{% endif %}<span class="stat-unit">{{ unit }}</span>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- ── Charts ── -->
+<div class="bb-card mb-3">
+  <div class="bb-card-header"><i class="bi bi-activity"></i> SOC & Voltage</div>
+  <div class="bb-card-body"><div class="chart-wrap" style="height:210px"><canvas id="h-soc"></canvas></div></div>
+</div>
+<div class="row g-3 mb-3">
+  <div class="col-md-6">
+    <div class="bb-card">
+      <div class="bb-card-header"><i class="bi bi-lightning"></i> Current (A)</div>
+      <div class="bb-card-body"><div class="chart-wrap" style="height:190px"><canvas id="h-curr"></canvas></div></div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="bb-card">
+      <div class="bb-card-header"><i class="bi bi-thermometer"></i> Temperature (°C)</div>
+      <div class="bb-card-body"><div class="chart-wrap" style="height:190px"><canvas id="h-temp"></canvas></div></div>
+    </div>
+  </div>
+</div>
+<div class="bb-card mb-3">
+  <div class="bb-card-header"><i class="bi bi-bar-chart"></i> Cell Voltage Spread</div>
+  <div class="bb-card-body"><div class="chart-wrap" style="height:190px"><canvas id="h-cells"></canvas></div></div>
+</div>
+
+<!-- ── Fault log ── -->
+<div class="bb-card mb-3">
+  <div class="bb-card-header">
+    <i class="bi bi-exclamation-triangle"></i> Fault Log
+    <span class="ms-1 mono" style="font-size:.7rem;color:var(--text-3)">({{ errors|length }})</span>
+  </div>
+  <div class="bb-card-body p-0">
+    {% if errors %}
+    <table class="table table-sm bb-table mb-0">
+      <thead><tr><th>Timestamp</th><th>Error</th></tr></thead>
+      <tbody>
+        {% for e in errors %}
+        <tr>
+          <td>{{ e.ts }}</td>
+          <td><span class="bb-badge badge-err">{{ e.error }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="p-3 mono" style="font-size:.8rem;color:var(--text-3)">
+      <span class="bb-badge badge-ok">✓ No faults in this range</span>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── Export ── -->
+<div class="bb-card">
+  <div class="bb-card-header"><i class="bi bi-download"></i> Export This Range</div>
+  <div class="bb-card-body">
+    <p style="font-size:.85rem;color:var(--text-2)">
+      Download all records for: <strong>{{ range_label }}</strong>
+    </p>
+    <button class="btn btn-sm btn-success d-flex align-items-center gap-2"
+            onclick="downloadRange()">
+      <i class="bi bi-filetype-csv"></i>
+      <span class="mono" style="font-size:.8rem">Download CSV</span>
+    </button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const gridColor = '#e2e5ea';
+(async () => {
+  const res  = await fetch(`/api/snapshots?start={{ range_start }}&end={{ range_end }}&max_points=600`);
+  const d    = await res.json();
+  const rows = d.rows || [];
+  const ts   = rows.map(r => new Date(r.ts + (r.ts.endsWith('Z') ? '' : 'Z')));
+  const scaleX = { type: 'time', grid: { color: gridColor }, ticks: { maxTicksLimit: 8 } };
+
+  new Chart(document.getElementById('h-soc'), {
+    type: 'line',
+    data: { datasets: [
+      { label: 'SOC %', data: rows.map((r,i)=>({x:ts[i],y:r.soc_percent})),
+        borderColor:'#16a34a',backgroundColor:'#dcfce780',fill:true,borderWidth:2,pointRadius:0,tension:.3,yAxisID:'y'},
+      { label: 'Voltage V', data: rows.map((r,i)=>({x:ts[i],y:r.total_voltage})),
+        borderColor:'#1d72e8',backgroundColor:'transparent',borderWidth:1.5,pointRadius:0,tension:.3,yAxisID:'y2',borderDash:[4,3]}
+    ]},
+    options: { responsive:true, maintainAspectRatio:false, animation:false,
+      plugins:{legend:{labels:{boxWidth:10,font:{size:11}}}},
+      scales:{x:scaleX,y:{grid:{color:gridColor},title:{display:true,text:'%',color:'#9ca3af'}},
+              y2:{position:'right',grid:{drawOnChartArea:false},title:{display:true,text:'V',color:'#9ca3af'}}}
+    }
+  });
+
+  for (const [id, key, color, bg] of [
+    ['h-curr','current','#1d72e8','#e8f0fd80'],
+    ['h-temp','highest_temp','#d97706','#fef3c780'],
+  ]) {
+    new Chart(document.getElementById(id), {
+      type:'line',
+      data:{datasets:[{label:key,data:rows.map((r,i)=>({x:ts[i],y:r[key]})),
+        borderColor:color,backgroundColor:bg,fill:true,borderWidth:2,pointRadius:0,tension:.3}]},
+      options:{responsive:true,maintainAspectRatio:false,animation:false,
+        plugins:{legend:{display:false}},
+        scales:{x:scaleX,y:{grid:{color:gridColor}}}}
+    });
+  }
+
+  new Chart(document.getElementById('h-cells'), {
+    type:'line',
+    data:{datasets:[
+      {label:'High V',data:rows.map((r,i)=>({x:ts[i],y:r.highest_voltage})),
+        borderColor:'#16a34a',backgroundColor:'transparent',borderWidth:2,pointRadius:0,tension:.3},
+      {label:'Low V',data:rows.map((r,i)=>({x:ts[i],y:r.lowest_voltage})),
+        borderColor:'#d97706',backgroundColor:'#fef3c750',fill:'-1',borderWidth:2,pointRadius:0,tension:.3}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,
+      plugins:{legend:{labels:{boxWidth:10,font:{size:11}}}},
+      scales:{x:scaleX,y:{grid:{color:gridColor},title:{display:true,text:'V',color:'#9ca3af'}}}}
+  });
+})();
+
+function downloadRange() {
+  const tzOffset = new Date().getTimezoneOffset();
+  const url = `/download/csv?start={{ range_start }}&end={{ range_end }}&tz_offset=${tzOffset}`;
+  window.location = url;
+}
+</script>
+{% endblock %}

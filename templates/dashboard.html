@@ -1,0 +1,575 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — BMS Black Box{% endblock %}
+{% block page_title %}<i class="bi bi-speedometer2 me-2" style="color:var(--accent)"></i>Dashboard{% endblock %}
+
+{% block head %}
+<style>
+  /* ── Outdoor-optimised dashboard overrides ── */
+
+  /* Kill the sidebar on dashboard — reclaim every pixel */
+  @media (min-width: 1px) {
+    #sidebar { display: none !important; }
+    #main-wrap { margin-left: 0 !important; }
+    #topbar { padding: 0 16px; height: 48px; }
+  }
+
+  body { background: #fff; }
+  #content { padding: 12px 14px; }
+
+  /* ── Big stat tiles ── */
+  .big-tile {
+    background: #fff;
+    border: 2.5px solid #d1d5db;
+    border-radius: 14px;
+    padding: 14px 16px 12px;
+    display: flex; flex-direction: column; justify-content: space-between;
+    min-height: 110px;
+    position: relative;
+    overflow: hidden;
+  }
+  .big-tile::after {
+    content: '';
+    position: absolute; bottom: 0; left: 0; right: 0; height: 4px;
+    border-radius: 0 0 11px 11px;
+    background: var(--tile-accent, #d1d5db);
+  }
+  .big-tile.t-green  { border-color: #86efac; --tile-accent: #16a34a; }
+  .big-tile.t-blue   { border-color: #93c5fd; --tile-accent: #1d72e8; }
+  .big-tile.t-amber  { border-color: #fcd34d; --tile-accent: #d97706; }
+  .big-tile.t-red    { border-color: #fca5a5; --tile-accent: #dc2626; background: #fff8f8; }
+  .big-tile.t-charge { border-color: #6ee7b7; --tile-accent: #059669; background: #f0fdf8; }
+
+  .tile-lbl {
+    font-size: .7rem; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: #6b7280;
+  }
+  .tile-val {
+    font-family: 'Sora', sans-serif;
+    font-size: 3rem; font-weight: 800;
+    line-height: 1; color: #0f1117;
+    letter-spacing: -.02em;
+  }
+  .tile-val.xl { font-size: 3.6rem; }
+  .tile-unit {
+    font-size: 1rem; font-weight: 600; color: #6b7280;
+    margin-left: 3px; vertical-align: baseline;
+  }
+  .tile-sub {
+    font-family: 'DM Mono', monospace;
+    font-size: .72rem; color: #6b7280; margin-top: 2px;
+  }
+  .tile-icon-bg {
+    position: absolute; top: 10px; right: 12px;
+    font-size: 1.6rem; opacity: .12;
+  }
+
+  /* ── SOC bar — the hero element ── */
+  .soc-bar-wrap {
+    background: #f3f4f6;
+    border: 2.5px solid #d1d5db;
+    border-radius: 14px;
+    padding: 14px 18px;
+    position: relative; overflow: hidden;
+  }
+  .soc-bar-track {
+    height: 28px; background: #e5e7eb; border-radius: 8px;
+    overflow: hidden; margin: 10px 0 6px;
+  }
+  .soc-bar-fill {
+    height: 100%; border-radius: 8px;
+    background: linear-gradient(90deg, #16a34a, #22c55e);
+    transition: width .8s cubic-bezier(.4,0,.2,1);
+    position: relative;
+  }
+  .soc-bar-fill::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(255,255,255,.25) 0%, transparent 100%);
+    border-radius: inherit;
+  }
+  .soc-pct-label {
+    font-family: 'Sora', sans-serif;
+    font-size: 2.8rem; font-weight: 800;
+    line-height: 1; color: #0f1117;
+  }
+  .soc-voltage {
+    font-family: 'DM Mono', monospace;
+    font-size: .9rem; color: #374151; font-weight: 500;
+  }
+
+  /* ── Cell grid – outdoor version: bigger, bolder ── */
+  .cell-grid-out {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+    gap: 5px;
+  }
+  .co-chip {
+    background: #f9fafb;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 6px 5px; text-align: center;
+    transition: border-color .2s, background .2s;
+  }
+  .co-chip.high { border-color: #4ade80; background: #f0fdf4; }
+  .co-chip.low  { border-color: #fbbf24; background: #fffbeb; }
+  .co-chip.warn { border-color: #f87171; background: #fef2f2; }
+  .co-num { font-family: 'DM Mono', monospace; font-size: .58rem; color: #9ca3af; display: block; }
+  .co-v   { font-family: 'DM Mono', monospace; font-size: .88rem; font-weight: 700; color: #111827; }
+  .co-bar { height: 4px; border-radius: 2px; background: #e5e7eb; margin-top: 4px; }
+  .co-bar-fill { height: 100%; border-radius: 2px; background: #60a5fa; transition: width .4s; }
+  .co-chip.high .co-bar-fill { background: #22c55e; }
+  .co-chip.low  .co-bar-fill { background: #f59e0b; }
+
+  /* ── Status row ── */
+  .status-chip {
+    background: #f3f4f6;
+    border: 2px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 8px 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .status-chip .sc-lbl { font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #6b7280; }
+  .status-chip .sc-val { font-family: 'DM Mono', monospace; font-size: .9rem; font-weight: 700; color: #111; }
+  .on-badge  { color: #16a34a; }
+  .off-badge { color: #9ca3af; }
+
+  /* ── Chart range buttons ── */
+  .chart-range { display: flex; gap: 4px; flex-wrap: wrap; }
+  .cr-btn {
+    background: #f3f4f6; border: 1.5px solid #d1d5db;
+    color: #374151; border-radius: 6px;
+    padding: 5px 11px; font-size: .78rem; font-weight: 600;
+    cursor: pointer; transition: all .12s; font-family: 'DM Mono', monospace;
+  }
+  .cr-btn:hover  { border-color: #1d72e8; color: #1d72e8; background: #eff6ff; }
+  .cr-btn.active { background: #1d72e8; border-color: #1d72e8; color: #fff; }
+  .cr-btn.live-btn { border-color: #16a34a; color: #16a34a; }
+  .cr-btn.live-btn.active { background: #16a34a; border-color: #16a34a; color: #fff; }
+
+  /* ── Fault banner ── */
+  .fault-banner {
+    background: #fef2f2; border: 2px solid #fca5a5;
+    border-radius: 10px; padding: 10px 14px;
+    display: none;
+  }
+  .fault-banner.show { display: block; }
+  .fault-text { font-size: .82rem; font-weight: 600; color: #dc2626; }
+
+  /* ── Streaming badge ── */
+  .live-badge {
+    display: none; align-items: center; gap: 5px;
+    background: #dcfce7; border: 1.5px solid #86efac;
+    color: #16a34a; border-radius: 20px;
+    padding: 3px 10px; font-size: .7rem; font-weight: 700;
+  }
+  .live-badge.show { display: flex; }
+  .pdot {
+    width: 7px; height: 7px; border-radius: 50%; background: #16a34a;
+    animation: pdotpulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pdotpulse { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.6);opacity:.5} }
+
+  /* ── Section headings ── */
+  .sec-head {
+    font-size: .7rem; font-weight: 700; letter-spacing: .1em;
+    text-transform: uppercase; color: #6b7280;
+    margin-bottom: 6px; padding-left: 2px;
+  }
+
+  /* ── Chart card ── */
+  .chart-card {
+    background: #fff; border: 2px solid #e5e7eb;
+    border-radius: 14px; overflow: hidden;
+  }
+  .chart-card-head {
+    padding: 10px 14px;
+    border-bottom: 1.5px solid #f3f4f6;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; flex-wrap: wrap;
+    background: #fafafa;
+  }
+  .chart-card-title { font-size: .78rem; font-weight: 700; color: #374151; }
+  .chart-card-body  { padding: 12px 14px; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- ── ROW 1: Big 4 stats ── -->
+<div class="row g-2 mb-2">
+  <div class="col-6 col-lg-3">
+    <div class="big-tile t-green" id="tile-soc">
+      <div class="tile-lbl">State of Charge</div>
+      <div>
+        <span class="tile-val xl" id="stat-soc">—</span><span class="tile-unit">%</span>
+      </div>
+      <div class="tile-sub" id="stat-soc-sub">—</div>
+      <i class="bi bi-battery-half tile-icon-bg"></i>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="big-tile t-blue" id="tile-voltage">
+      <div class="tile-lbl">Pack Voltage</div>
+      <div>
+        <span class="tile-val" id="stat-voltage">—</span><span class="tile-unit">V</span>
+      </div>
+      <div class="tile-sub" id="stat-volt-sub">—</div>
+      <i class="bi bi-lightning-charge tile-icon-bg"></i>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="big-tile t-blue" id="tile-current">
+      <div class="tile-lbl">Current</div>
+      <div>
+        <span class="tile-val" id="stat-current">—</span><span class="tile-unit">A</span>
+      </div>
+      <div class="tile-sub" id="stat-curr-sub">—</div>
+      <i class="bi bi-activity tile-icon-bg"></i>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="big-tile t-amber" id="tile-temp">
+      <div class="tile-lbl">Temperature</div>
+      <div>
+        <span class="tile-val" id="stat-temp">—</span><span class="tile-unit">°C</span>
+      </div>
+      <div class="tile-sub" id="stat-temp-sub">—</div>
+      <i class="bi bi-thermometer-half tile-icon-bg"></i>
+    </div>
+  </div>
+</div>
+
+<!-- ── ROW 2: SOC bar + status chips ── -->
+<div class="row g-2 mb-2">
+  <div class="col-md-7">
+    <div class="soc-bar-wrap">
+      <div class="d-flex align-items-baseline justify-content-between">
+        <div>
+          <span class="soc-pct-label" id="soc-bar-num">—</span>
+          <span style="font-size:1.1rem;font-weight:600;color:#6b7280;margin-left:4px">%</span>
+        </div>
+        <div class="soc-voltage" id="soc-bar-voltage">— V</div>
+      </div>
+      <div class="soc-bar-track">
+        <div class="soc-bar-fill" id="soc-bar-fill" style="width:0%"></div>
+      </div>
+      <div class="d-flex justify-content-between" style="font-family:'DM Mono',monospace;font-size:.65rem;color:#9ca3af">
+        <span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-5">
+    <div class="row g-2 h-100">
+      <div class="col-6">
+        <div class="status-chip h-100">
+          <i class="bi bi-arrow-up-circle" style="font-size:1.2rem;color:#16a34a"></i>
+          <div>
+            <div class="sc-lbl">Charge FET</div>
+            <div class="sc-val" id="sc-charge">—</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6">
+        <div class="status-chip h-100">
+          <i class="bi bi-arrow-down-circle" style="font-size:1.2rem;color:#1d72e8"></i>
+          <div>
+            <div class="sc-lbl">Discharge FET</div>
+            <div class="sc-val" id="sc-discharge">—</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6">
+        <div class="status-chip h-100">
+          <i class="bi bi-plug" style="font-size:1.2rem;color:#d97706"></i>
+          <div>
+            <div class="sc-lbl">Charger</div>
+            <div class="sc-val" id="sc-charger">—</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6">
+        <div class="status-chip h-100">
+          <i class="bi bi-cpu" style="font-size:1.2rem;color:#7c3aed"></i>
+          <div>
+            <div class="sc-lbl">Load</div>
+            <div class="sc-val" id="sc-load">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Fault banner (hidden unless active) ── -->
+<div class="fault-banner mb-2" id="fault-banner">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-exclamation-triangle-fill" style="font-size:1.1rem;color:#dc2626"></i>
+    <div id="fault-text" class="fault-text"></div>
+  </div>
+</div>
+
+<!-- ── ROW 3: Cell grid ── -->
+<div class="mb-2">
+  <div class="d-flex align-items-center justify-content-between mb-1">
+    <div class="sec-head">Cell Voltages</div>
+    <div class="d-flex gap-3" style="font-family:'DM Mono',monospace;font-size:.68rem;color:#6b7280">
+      <span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#4ade80;margin-right:3px;vertical-align:middle"></span>High</span>
+      <span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#fbbf24;margin-right:3px;vertical-align:middle"></span>Low</span>
+      <span id="cell-delta-display" style="color:#374151"></span>
+    </div>
+  </div>
+  <div class="cell-grid-out" id="cell-grid"></div>
+</div>
+
+<!-- ── ROW 4: Charts ── -->
+<div class="chart-card">
+  <div class="chart-card-head">
+    <div class="d-flex align-items-center gap-2">
+      <span class="chart-card-title"><i class="bi bi-graph-up-arrow me-1" style="color:#1d72e8"></i>Trends</span>
+      <span class="live-badge" id="live-badge"><span class="pdot"></span>LIVE</span>
+    </div>
+    <div class="chart-range" id="chart-range-btns">
+      <button class="cr-btn live-btn" onclick="setRange('live',this)">⬤ LIVE</button>
+      <div style="width:1px;background:#e5e7eb;margin:0 2px"></div>
+      {% for p,l in [('5m','5M'),('15m','15M'),('1h','1H'),('6h','6H'),('24h','24H')] %}
+      <button class="cr-btn {% if p=='1h' %}active{% endif %}"
+              onclick="setRange('{{ p }}',this)">{{ l }}</button>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="chart-card-body">
+    <div class="row g-2">
+      <div class="col-md-6">
+        <div style="font-size:.68rem;font-weight:600;color:#9ca3af;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">SOC % · Voltage V</div>
+        <div style="height:150px;position:relative"><canvas id="chart-soc"></canvas></div>
+      </div>
+      <div class="col-md-6">
+        <div style="font-size:.68rem;font-weight:600;color:#9ca3af;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Current A</div>
+        <div style="height:150px;position:relative"><canvas id="chart-curr"></canvas></div>
+      </div>
+      <div class="col-md-6">
+        <div style="font-size:.68rem;font-weight:600;color:#9ca3af;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Temperature °C</div>
+        <div style="height:150px;position:relative"><canvas id="chart-temp"></canvas></div>
+      </div>
+      <div class="col-md-6">
+        <div style="font-size:.68rem;font-weight:600;color:#9ca3af;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Cell Spread V</div>
+        <div style="height:150px;position:relative"><canvas id="chart-cells"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const POLL_MS       = {{ cfg.BMS_POLL_INTERVAL * 1000 }};
+const ALERT_TEMP    = {{ cfg.ALERT_HIGH_TEMP }};
+const ALERT_DELTA   = {{ cfg.ALERT_CELL_VOLTAGE_DIFF }};
+let chartRange = '1h';
+let liveMode   = false;
+
+// ── WebSocket ────────────────────────────────────────────────────
+const socket  = io('/live');
+const wsDot   = document.getElementById('ws-dot');
+const wsTxt   = document.getElementById('ws-status-text');
+
+socket.on('connect',    () => { wsDot.className='ws-dot live'; if(wsTxt) wsTxt.textContent='Live'; });
+socket.on('disconnect', () => { wsDot.className='ws-dot err';  if(wsTxt) wsTxt.textContent='Offline'; });
+socket.on('bms_update', p  => { if(p.ok && p.data){ updateAll(p.data); if(liveMode) pushPoint(p.data); } });
+
+// ── Charts ───────────────────────────────────────────────────────
+const G = '#e5e7eb';
+const xScale = { type:'time', grid:{color:G}, ticks:{maxTicksLimit:5,font:{size:10}} };
+const yScale = { grid:{color:G}, ticks:{font:{size:10}} };
+
+const cSoc = new Chart(document.getElementById('chart-soc'), {
+  type:'line',
+  data:{datasets:[
+    {label:'SOC %', data:[], borderColor:'#16a34a', backgroundColor:'#dcfce770',
+     fill:true, borderWidth:2, pointRadius:0, tension:.3, yAxisID:'y'},
+    {label:'V',     data:[], borderColor:'#1d72e8', backgroundColor:'transparent',
+     borderWidth:1.5, pointRadius:0, tension:.3, yAxisID:'y2', borderDash:[4,3]}
+  ]},
+  options:{responsive:true,maintainAspectRatio:false,animation:{duration:200},
+    plugins:{legend:{display:true,labels:{boxWidth:9,padding:10,font:{size:10}}}},
+    scales:{x:xScale, y:{...yScale,title:{display:true,text:'%',color:'#9ca3af',font:{size:10}}},
+            y2:{position:'right',grid:{drawOnChartArea:false},ticks:{font:{size:10}},
+                title:{display:true,text:'V',color:'#9ca3af',font:{size:10}}}}}
+});
+
+const cCurr = new Chart(document.getElementById('chart-curr'), {
+  type:'line', data:{datasets:[{label:'A',data:[],borderColor:'#1d72e8',
+    backgroundColor:'#dbeafe70',fill:true,borderWidth:2,pointRadius:0,tension:.3}]},
+  options:{responsive:true,maintainAspectRatio:false,animation:{duration:200},
+    plugins:{legend:{display:false}}, scales:{x:xScale,y:yScale}}
+});
+
+const cTemp = new Chart(document.getElementById('chart-temp'), {
+  type:'line', data:{datasets:[{label:'°C',data:[],borderColor:'#d97706',
+    backgroundColor:'#fef3c770',fill:true,borderWidth:2,pointRadius:0,tension:.3}]},
+  options:{responsive:true,maintainAspectRatio:false,animation:{duration:200},
+    plugins:{legend:{display:false}}, scales:{x:xScale,y:yScale}}
+});
+
+const cCells = new Chart(document.getElementById('chart-cells'), {
+  type:'line',
+  data:{datasets:[
+    {label:'High',data:[],borderColor:'#16a34a',backgroundColor:'transparent',borderWidth:2,pointRadius:0,tension:.3},
+    {label:'Low', data:[],borderColor:'#d97706',backgroundColor:'#fef3c750',fill:'-1',borderWidth:2,pointRadius:0,tension:.3}
+  ]},
+  options:{responsive:true,maintainAspectRatio:false,animation:{duration:200},
+    plugins:{legend:{display:true,labels:{boxWidth:9,padding:10,font:{size:10}}}},
+    scales:{x:xScale, y:{...yScale,title:{display:true,text:'V',color:'#9ca3af',font:{size:10}}}}}
+});
+
+const allCharts = [cSoc, cCurr, cTemp, cCells];
+
+// ── UI update ────────────────────────────────────────────────────
+function fmt(v, d=1) { return v!=null ? (+v).toFixed(d) : '—'; }
+
+function updateAll(bms) {
+  const soc  = bms.soc || {};
+  const cvr  = bms.cell_voltage_range || {};
+  const tr   = bms.temperature_range || {};
+  const mfet = bms.mosfet_status || {};
+  const st   = bms.status || {};
+  const cvs  = bms.cell_voltages || {};
+  const errs = bms.errors || [];
+
+  // Big tiles
+  document.getElementById('stat-soc').textContent     = fmt(soc.soc_percent, 0);
+  document.getElementById('stat-soc-sub').textContent = `${fmt(soc.total_voltage,2)}V · ${fmt(mfet.capacity_ah,1)}Ah`;
+  document.getElementById('stat-voltage').textContent = fmt(soc.total_voltage, 2);
+  document.getElementById('stat-volt-sub').textContent= `${fmt(cvr.lowest_voltage,3)}–${fmt(cvr.highest_voltage,3)}V cells`;
+
+  const curr = soc.current ?? 0;
+  document.getElementById('stat-current').textContent = fmt(Math.abs(curr), 1);
+  document.getElementById('stat-curr-sub').textContent= curr > 0.1 ? '↑ Charging' : curr < -0.1 ? '↓ Discharging' : '— Idle';
+  const tc = document.getElementById('tile-current');
+  tc.className = 'big-tile ' + (curr > 0.1 ? 't-charge' : curr < -0.1 ? 't-red' : 't-blue');
+
+  const t = tr.highest_temperature ?? 0;
+  document.getElementById('stat-temp').textContent    = fmt(t, 0);
+  document.getElementById('stat-temp-sub').textContent= `Sensor ${tr.highest_sensor || 1}`;
+  document.getElementById('tile-temp').className = 'big-tile ' + (t >= ALERT_TEMP ? 't-red' : t >= 35 ? 't-amber' : 't-blue');
+
+  // SOC bar
+  const pct = Math.max(0, Math.min(100, soc.soc_percent || 0));
+  document.getElementById('soc-bar-num').textContent   = fmt(pct, 0);
+  document.getElementById('soc-bar-voltage').textContent = fmt(soc.total_voltage, 2) + ' V';
+  const fill = document.getElementById('soc-bar-fill');
+  fill.style.width = pct + '%';
+  fill.style.background = pct < 20
+    ? 'linear-gradient(90deg,#dc2626,#f87171)'
+    : pct < 40
+    ? 'linear-gradient(90deg,#d97706,#fbbf24)'
+    : 'linear-gradient(90deg,#16a34a,#22c55e)';
+  // Match SOC tile colour too
+  document.getElementById('tile-soc').className = 'big-tile ' + (pct < 20 ? 't-red' : pct < 40 ? 't-amber' : 't-green');
+
+  // Status chips
+  function onOff(v) { return v ? '<span class="on-badge">● ON</span>' : '<span class="off-badge">○ OFF</span>'; }
+  document.getElementById('sc-charge').innerHTML    = onOff(mfet.charging_mosfet);
+  document.getElementById('sc-discharge').innerHTML = onOff(mfet.discharging_mosfet);
+  document.getElementById('sc-charger').innerHTML   = onOff(st.charger_running);
+  document.getElementById('sc-load').innerHTML      = onOff(st.load_running);
+
+  // Cell delta
+  const delta = (cvr.highest_voltage != null && cvr.lowest_voltage != null)
+    ? (cvr.highest_voltage - cvr.lowest_voltage) : null;
+  const dEl = document.getElementById('cell-delta-display');
+  if (delta != null) {
+    dEl.textContent = `Δ ${delta.toFixed(3)}V`;
+    dEl.style.color = delta >= ALERT_DELTA ? '#dc2626' : '#374151';
+    dEl.style.fontWeight = delta >= ALERT_DELTA ? '700' : '500';
+  }
+
+  // Fault banner
+  const banner = document.getElementById('fault-banner');
+  if (errs.length) {
+    banner.classList.add('show');
+    document.getElementById('fault-text').textContent = errs.join(' · ');
+  } else {
+    banner.classList.remove('show');
+  }
+
+  // Cell grid
+  renderCells(cvs, cvr.highest_cell, cvr.lowest_cell);
+}
+
+function renderCells(cvs, highCell, lowCell) {
+  const keys = Object.keys(cvs).map(Number).sort((a,b)=>a-b);
+  if (!keys.length) return;
+  const vals = keys.map(k => cvs[k]);
+  const mn = Math.min(...vals), mx = Math.max(...vals);
+  document.getElementById('cell-grid').innerHTML = keys.map(k => {
+    const v = cvs[k];
+    const pct = mx > mn ? (v-mn)/(mx-mn)*100 : 50;
+    const cls = k==highCell ? 'high' : k==lowCell ? 'low' : v<3.0 ? 'warn' : '';
+    return `<div class="co-chip ${cls}">
+      <span class="co-num">C${k}</span>
+      <span class="co-v">${v.toFixed(3)}</span>
+      <div class="co-bar"><div class="co-bar-fill" style="width:${pct}%"></div></div>
+    </div>`;
+  }).join('');
+}
+
+// ── Live streaming ────────────────────────────────────────────────
+const LIVE_WIN = 120_000;
+const LIVE_MAX = 800;
+
+function pushPoint(bms) {
+  const now  = new Date();
+  const soc  = bms.soc || {};
+  const cvr  = bms.cell_voltage_range || {};
+  const tr   = bms.temperature_range || {};
+  const pt   = y => ({x:now, y});
+  cSoc.data.datasets[0].data.push(pt(soc.soc_percent));
+  cSoc.data.datasets[1].data.push(pt(soc.total_voltage));
+  cCurr.data.datasets[0].data.push(pt(soc.current));
+  cTemp.data.datasets[0].data.push(pt(tr.highest_temperature));
+  cCells.data.datasets[0].data.push(pt(cvr.highest_voltage));
+  cCells.data.datasets[1].data.push(pt(cvr.lowest_voltage));
+  const cut = now - LIVE_WIN;
+  allCharts.forEach(c => c.data.datasets.forEach(ds => {
+    while (ds.data.length > LIVE_MAX || (ds.data.length>1 && ds.data[0].x < cut)) ds.data.shift();
+  }));
+  allCharts.forEach(c => c.update('none'));
+}
+
+// ── Historical load ───────────────────────────────────────────────
+async function loadHistory(range) {
+  const res  = await fetch(`/api/snapshots?range=${range}&max_points=400`);
+  const d    = await res.json();
+  const rows = d.rows || [];
+  const ts   = rows.map(r => new Date(r.ts+(r.ts.endsWith('Z')?'':'Z')));
+  cSoc.data.datasets[0].data  = rows.map((r,i)=>({x:ts[i],y:r.soc_percent}));
+  cSoc.data.datasets[1].data  = rows.map((r,i)=>({x:ts[i],y:r.total_voltage}));
+  cCurr.data.datasets[0].data = rows.map((r,i)=>({x:ts[i],y:r.current}));
+  cTemp.data.datasets[0].data = rows.map((r,i)=>({x:ts[i],y:r.highest_temp}));
+  cCells.data.datasets[0].data= rows.map((r,i)=>({x:ts[i],y:r.highest_voltage}));
+  cCells.data.datasets[1].data= rows.map((r,i)=>({x:ts[i],y:r.lowest_voltage}));
+  allCharts.forEach(c => c.update('none'));
+}
+
+function setRange(range, btn) {
+  document.querySelectorAll('#chart-range-btns .cr-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  chartRange = range;
+  const badge = document.getElementById('live-badge');
+  if (range === 'live') {
+    liveMode = true; badge.classList.add('show');
+    allCharts.forEach(c=>c.data.datasets.forEach(ds=>ds.data=[]));
+    allCharts.forEach(c=>c.update('none'));
+  } else {
+    liveMode = false; badge.classList.remove('show');
+    loadHistory(range);
+  }
+}
+
+// ── Init ─────────────────────────────────────────────────────────
+loadHistory(chartRange);
+setInterval(() => { if (!liveMode) loadHistory(chartRange); }, Math.max(30000, POLL_MS*6));
+</script>
+{% endblock %}
