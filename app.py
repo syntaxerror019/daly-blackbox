@@ -1,79 +1,87 @@
 """
-app.py - Flask + SocketIO web application for Daly BMS Black Box
+app.py - Flask + SocketIO BMS Monitor Application
 """
-
+import csv
+import io
 import json
 import logging
-from datetime import datetime, timedelta
+import logging.handlers
+import os
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 
-from flask import (Flask, render_template, redirect, url_for, request,
-                   session, jsonify, Response)
-from flask_socketio import SocketIO, disconnect
+from flask import (
+    Flask,
+    Response,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
+from flask_socketio import SocketIO, emit
 
-from config import cfg
-import db
-import poller
+import bms_poller
+from config import Config
+from database import init_db, query_snapshots, query_snapshots_paginated
 
+# ---------------------------------------------------------------------------
+# Logging setup
+# ---------------------------------------------------------------------------
+os.makedirs(os.path.dirname(Config.LOG_FILE) or ".", exist_ok=True)
+
+_log_handlers = [
+    logging.StreamHandler(),
+    logging.handlers.RotatingFileHandler(
+        Config.LOG_FILE,
+        maxBytes=Config.LOG_MAX_BYTES,
+        backupCount=Config.LOG_BACKUP_COUNT,
+    ),
+]
+logging.basicConfig(
+    level=getattr(logging, Config.LOG_LEVEL.upper(), logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=_log_handlers,
+)
 log = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Flask app
+# ---------------------------------------------------------------------------
 app = Flask(__name__)
-app.secret_key = cfg.SECRET_KEY
-
+app.secret_key = Config.SECRET_KEY
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
-# Hand socketio to poller so it can broadcast after each poll
-poller.set_socketio(socketio)
-
-
-# ── Auth ───────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Auth helpers
+# ---------------------------------------------------------------------------
 
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if not session.get("logged_in"):
-            return redirect(url_for("login", next=request.path))
+            return redirect(url_for("login", next=request.url))
         return f(*args, **kwargs)
     return decorated
 
 
-def _parse_range(preset=None, start=None, end=None):
-    now = datetime.utcnow()
-    presets = {
-        "5m":  (now - timedelta(minutes=5),  now, "Last 5 minutes"),
-        "15m": (now - timedelta(minutes=15), now, "Last 15 minutes"),
-        "1h":  (now - timedelta(hours=1),    now, "Last 1 hour"),
-        "6h":  (now - timedelta(hours=6),    now, "Last 6 hours"),
-        "12h": (now - timedelta(hours=12),   now, "Last 12 hours"),
-        "24h": (now - timedelta(hours=24),   now, "Last 24 hours"),
-        "7d":  (now - timedelta(days=7),     now, "Last 7 days"),
-        "30d": (now - timedelta(days=30),    now, "Last 30 days"),
-        "90d": (now - timedelta(days=90),    now, "Last 90 days"),
-        "all": (datetime(2000, 1, 1),        now, "All time"),
-    }
-    if preset and preset in presets:
-        return presets[preset]
-    try:
-        s = datetime.fromisoformat(start)
-        e = datetime.fromisoformat(end)
-        return s, e, f"{s.strftime('%b %d %H:%M')} \u2192 {e.strftime('%b %d %H:%M')}"
-    except Exception:
-        return presets["24h"]
-
-
-# ── Routes ────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Auth routes
+# ---------------------------------------------------------------------------
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = None
     if request.method == "POST":
-        if (request.form.get("username") == cfg.WEB_USERNAME and
-                request.form.get("password") == cfg.WEB_PASSWORD):
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+        if username == Config.WEB_USERNAME and password == Config.WEB_PASSWORD:
             session["logged_in"] = True
-            session.permanent = True
-            return redirect(request.args.get("next") or url_for("dashboard"))
+            next_url = request.args.get("next") or url_for("dashboard")
+            return redirect(next_url)
         error = "Invalid credentials"
-    return render_template("login.html", error=error, config=cfg)
+    return render_template("login.html", error=error)
 
 
 @app.route("/logout")
@@ -82,98 +90,168 @@ def logout():
     return redirect(url_for("login"))
 
 
+# ---------------------------------------------------------------------------
+# Main pages
+# ---------------------------------------------------------------------------
+
 @app.route("/")
 @login_required
 def dashboard():
-    return render_template("dashboard.html", live=poller.get_live_data(), cfg=cfg)
+    return render_template("dashboard.html", config=Config)
 
 
 @app.route("/history")
 @login_required
 def history():
-    preset = request.args.get("range", "24h")
-    s, e, label = _parse_range(preset, request.args.get("start"), request.args.get("end"))
-    return render_template("history.html",
-                           stats=db.get_stats(s, e),
-                           errors=db.get_errors(s, e),
-                           range_label=label, preset=preset,
-                           range_start=s.isoformat(), range_end=e.isoformat(),
-                           cfg=cfg)
+    return render_template("history.html", config=Config)
 
 
-# ── API ───────────────────────────────────────────────────────────────────────
-
-@app.route("/api/live")
+@app.route("/hud")
 @login_required
-def api_live():
-    return jsonify(poller.get_live_data())
+def hud():
+    """Driver HUD — optimised for small bright displays."""
+    return render_template("hud.html", config=Config)
 
 
-@app.route("/api/snapshots")
+# ---------------------------------------------------------------------------
+# REST API
+# ---------------------------------------------------------------------------
+
+@app.route("/api/status")
 @login_required
-def api_snapshots():
-    preset  = request.args.get("range", "24h")
-    max_pts = int(request.args.get("max_points", 500))
-    s, e, label = _parse_range(preset, request.args.get("start"), request.args.get("end"))
-    rows = db.get_snapshots(s, e, max_points=max_pts)
-    return jsonify({"label": label, "start": s.isoformat(), "end": e.isoformat(),
-                    "count": len(rows), "rows": rows})
+def api_status():
+    status = bms_poller.get_status()
+    latest = bms_poller.get_latest()
+    return jsonify({"poller": status, "latest": latest})
 
 
-@app.route("/api/stats")
+@app.route("/api/latest")
 @login_required
-def api_stats():
-    s, e, label = _parse_range(request.args.get("range", "24h"),
-                                request.args.get("start"), request.args.get("end"))
-    return jsonify({"label": label, **db.get_stats(s, e)})
+def api_latest():
+    data = bms_poller.get_latest()
+    if data is None:
+        return jsonify({"error": "No data yet"}), 503
+    return jsonify({"data": data, "ts": bms_poller.get_status()["last_poll_ts"]})
 
 
-@app.route("/api/errors")
+def _parse_timeframe() -> tuple[datetime, datetime]:
+    """Parse ?start= and ?end= query params. Defaults to last 24h."""
+    now = datetime.now(timezone.utc)
+    try:
+        end = datetime.fromisoformat(request.args["end"]) if "end" in request.args else now
+        if "start" in request.args:
+            start = datetime.fromisoformat(request.args["start"])
+        else:
+            hours = float(request.args.get("hours", 24))
+            start = now - timedelta(hours=hours)
+    except (ValueError, KeyError):
+        start = now - timedelta(hours=24)
+        end = now
+    return start, end
+
+
+@app.route("/api/history")
 @login_required
-def api_errors():
-    s, e, _ = _parse_range(request.args.get("range", "24h"),
-                            request.args.get("start"), request.args.get("end"))
-    return jsonify(db.get_errors(s, e))
+def api_history():
+    start, end = _parse_timeframe()
+    limit = int(request.args.get("limit", 2000))
+    rows = query_snapshots_paginated(start, end, limit=limit)
+    return jsonify({"count": len(rows), "start": start.isoformat(), "end": end.isoformat(), "rows": rows})
 
 
-@app.route("/api/health")
-def health():
-    live = poller.get_live_data()
-    return jsonify({"status": "ok" if live["ok"] else "degraded",
-                    "last_poll": live["ts"],
-                    "poll_count": live["poll_count"],
-                    "fail_count": live["fail_count"]})
-
-
-# ── Download CSV only ─────────────────────────────────────────────────────────
-
-@app.route("/download/csv")
+@app.route("/api/download/csv")
 @login_required
-def download_csv():
-    preset = request.args.get("range", "24h")
-    s, e, _ = _parse_range(preset, request.args.get("start"), request.args.get("end"))
-    tz_offset = int(request.args.get("tz_offset", 0))  # minutes, from JS
-    csv_data = db.export_csv(s, e, tz_offset_minutes=tz_offset)
-    if preset == "all":
-        fname = "bms_all_time.csv"
-    else:
-        fname = f"bms_{s.strftime('%Y%m%d_%H%M')}_{e.strftime('%Y%m%d_%H%M')}.csv"
-    return Response(csv_data, mimetype="text/csv",
-                    headers={"Content-Disposition": f"attachment; filename={fname}"})
+def api_download_csv():
+    start, end = _parse_timeframe()
+    rows = query_snapshots(start, end)
+
+    def generate():
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        # Header
+        writer.writerow([
+            "timestamp", "total_voltage", "current", "soc_percent",
+            "highest_cell_v", "lowest_cell_v", "cell_delta_v",
+            "temp_high", "temp_low", "cycles", "capacity_ah",
+            "mosfet_mode", "charging_mosfet", "discharging_mosfet",
+            "charger_running", "load_running", "errors",
+        ])
+        yield buf.getvalue()
+        buf.seek(0); buf.truncate(0)
+
+        for r in rows:
+            cvr = r.get("cell_voltage_range", {})
+            tr = r.get("temperature_range", {})
+            ms = r.get("mosfet", {})
+            st = r.get("status", {})
+            s = r.get("soc", {})
+            writer.writerow([
+                r["ts"],
+                s.get("total_voltage"), s.get("current"), s.get("soc_percent"),
+                cvr.get("highest_voltage"), cvr.get("lowest_voltage"),
+                round((cvr.get("highest_voltage") or 0) - (cvr.get("lowest_voltage") or 0), 4),
+                tr.get("highest_temperature"), tr.get("lowest_temperature"),
+                st.get("cycles"), ms.get("capacity_ah"),
+                ms.get("mode"), ms.get("charging"), ms.get("discharging"),
+                st.get("charger_running"), st.get("load_running"),
+                "; ".join(r.get("errors", [])),
+            ])
+            yield buf.getvalue()
+            buf.seek(0); buf.truncate(0)
+
+    fname = f"bms_{start.strftime('%Y%m%d_%H%M')}_{end.strftime('%Y%m%d_%H%M')}.csv"
+    return Response(
+        generate(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={fname}"},
+    )
 
 
-# ── WebSocket ─────────────────────────────────────────────────────────────────
+@app.route("/api/download/json")
+@login_required
+def api_download_json():
+    start, end = _parse_timeframe()
+    rows = query_snapshots(start, end)
+    out = json.dumps({"start": start.isoformat(), "end": end.isoformat(), "rows": rows}, indent=2)
+    fname = f"bms_{start.strftime('%Y%m%d_%H%M')}_{end.strftime('%Y%m%d_%H%M')}.json"
+    return Response(
+        out,
+        mimetype="application/json",
+        headers={"Content-Disposition": f"attachment; filename={fname}"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# SocketIO namespace
+# ---------------------------------------------------------------------------
 
 @socketio.on("connect", namespace="/live")
 def ws_connect():
     if not session.get("logged_in"):
-        disconnect()
-        return
-    log.debug("WS client connected")
-    # Send latest data immediately on connect
-    socketio.emit("bms_update", poller.get_live_data(), namespace="/live", to=request.sid)
+        return False  # Reject unauthenticated
+    # Send latest immediately on connect
+    data = bms_poller.get_latest()
+    if data:
+        emit("bms_update", {"data": data, "ts": bms_poller.get_status()["last_poll_ts"]})
+    log.debug("WebSocket client connected")
 
 
 @socketio.on("disconnect", namespace="/live")
 def ws_disconnect():
-    log.debug("WS client disconnected")
+    log.debug("WebSocket client disconnected")
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+def create_app():
+    init_db()
+    bms_poller.start_poller(socketio)
+    return app
+
+
+if __name__ == "__main__":
+    create_app()
+    log.info("Starting BMS Monitor on %s:%d", Config.WEB_HOST, Config.WEB_PORT)
+    socketio.run(app, host=Config.WEB_HOST, port=Config.WEB_PORT, debug=False)

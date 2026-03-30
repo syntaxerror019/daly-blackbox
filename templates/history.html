@@ -1,183 +1,271 @@
 {% extends "base.html" %}
-{% block title %}History — BMS Black Box{% endblock %}
-{% block page_title %}<i class="bi bi-graph-up me-2" style="color:var(--accent)"></i>History & Analytics{% endblock %}
+{% block title %}History · BMS Monitor{% endblock %}
 
 {% block content %}
-
-<!-- ── Range bar ── -->
-<div class="bb-card mb-3">
-  <div class="bb-card-body py-2">
-    <div class="d-flex align-items-center gap-2 flex-wrap">
-      <span style="font-size:.72rem;font-weight:600;color:var(--text-3)">RANGE</span>
-      {% for p,l in [('1h','1 Hour'),('6h','6 Hours'),('12h','12 Hours'),('24h','24 Hours'),('7d','7 Days'),('30d','30 Days'),('90d','90 Days')] %}
-      <a href="{{ url_for('history', range=p) }}"
-         class="range-btn {% if preset==p %}active{% endif %}">{{ l }}</a>
-      {% endfor %}
-      <span class="ms-auto mono" style="font-size:.72rem;color:var(--text-2)">{{ range_label }}</span>
-    </div>
-    <div class="mt-2 d-flex align-items-center gap-2 flex-wrap">
-      <span style="font-size:.72rem;font-weight:600;color:var(--text-3)">CUSTOM</span>
-      <form method="GET" class="d-flex gap-2 align-items-center flex-wrap">
-        <input type="datetime-local" name="start" class="form-control form-control-sm"
-               style="width:auto" value="{{ range_start[:16] }}">
-        <span style="color:var(--text-3)">→</span>
-        <input type="datetime-local" name="end" class="form-control form-control-sm"
-               style="width:auto" value="{{ range_end[:16] }}">
-        <button type="submit" class="range-btn">Apply</button>
-      </form>
+<div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+  <div>
+    <h4 class="mb-0 fw-800" style="font-size:1.3rem;">History</h4>
+    <div style="font-size:0.7rem; font-family:var(--font-mono); color:var(--muted);">
+      Browse, filter, and export logged data
     </div>
   </div>
 </div>
 
-<!-- ── Stats ── -->
-<div class="row g-3 mb-3">
-  {% set items = [
-    ('Min SOC','min_soc','%','battery','t-blue'),
-    ('Max SOC','max_soc','%','battery-full','t-green'),
-    ('Avg SOC','avg_soc','%','battery-half','t-blue'),
-    ('Min Voltage','min_voltage','V','lightning','t-blue'),
-    ('Max Voltage','max_voltage','V','lightning-charge','t-blue'),
-    ('Min Temp','min_temp','°C','thermometer-low','t-blue'),
-    ('Max Temp','max_temp','°C','thermometer-high','t-amber'),
-    ('Samples','samples','','database','t-blue'),
-  ] %}
-  {% for label,key,unit,icon,cls in items %}
-  <div class="col-6 col-md-3">
-    <div class="stat-tile {{ cls }}">
-      <div class="tile-icon"><i class="bi bi-{{ icon }}"></i></div>
-      <div class="stat-label">{{ label }}</div>
-      <div class="stat-value" style="font-size:1.6rem">
-        {% if stats.get(key) is not none %}{{ '%.1f'|format(stats[key]|float) }}{% else %}—{% endif %}<span class="stat-unit">{{ unit }}</span>
+<!-- Filter Bar -->
+<div class="chart-card mb-3">
+  <div class="row g-2 align-items-end">
+    <div class="col-auto">
+      <label class="form-label" style="font-size:0.65rem;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Quick Range</label>
+      <div class="btn-group btn-group-sm" id="quick-range">
+        <button class="btn btn-outline-secondary active" data-hours="1">1h</button>
+        <button class="btn btn-outline-secondary" data-hours="6">6h</button>
+        <button class="btn btn-outline-secondary" data-hours="24">24h</button>
+        <button class="btn btn-outline-secondary" data-hours="168">7d</button>
+        <button class="btn btn-outline-secondary" data-hours="720">30d</button>
+        <button class="btn btn-outline-secondary" data-hours="custom">Custom</button>
+      </div>
+    </div>
+    <div class="col-auto" id="custom-range" style="display:none;">
+      <div class="d-flex gap-2 align-items-center">
+        <div>
+          <label class="form-label" style="font-size:0.65rem;font-family:var(--font-mono);color:var(--muted);">Start</label>
+          <input type="datetime-local" id="custom-start" class="form-control form-control-sm" style="background:#0a0d12;border-color:var(--border);color:var(--text);font-family:var(--font-mono);font-size:0.75rem;">
+        </div>
+        <div>
+          <label class="form-label" style="font-size:0.65rem;font-family:var(--font-mono);color:var(--muted);">End</label>
+          <input type="datetime-local" id="custom-end" class="form-control form-control-sm" style="background:#0a0d12;border-color:var(--border);color:var(--text);font-family:var(--font-mono);font-size:0.75rem;">
+        </div>
+      </div>
+    </div>
+    <div class="col-auto ms-auto d-flex gap-2">
+      <button class="btn btn-sm" id="btn-load" style="background:var(--brand);color:#0a0d12;font-weight:700;border:none;padding:0.35rem 1rem;border-radius:6px;">
+        <i class="bi bi-arrow-clockwise me-1"></i>Load
+      </button>
+      <div class="dropdown">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+          <i class="bi bi-download me-1"></i>Export
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end" style="background:var(--surface);border-color:var(--border);">
+          <li><a class="dropdown-item" id="dl-csv" href="#" style="font-size:0.8rem;color:var(--text);"><i class="bi bi-filetype-csv me-2"></i>Download CSV</a></li>
+          <li><a class="dropdown-item" id="dl-json" href="#" style="font-size:0.8rem;color:var(--text);"><i class="bi bi-filetype-json me-2"></i>Download JSON</a></li>
+        </ul>
       </div>
     </div>
   </div>
-  {% endfor %}
+  <div id="range-info" class="mt-2" style="font-size:0.7rem;font-family:var(--font-mono);color:var(--muted);"></div>
 </div>
 
-<!-- ── Charts ── -->
-<div class="bb-card mb-3">
-  <div class="bb-card-header"><i class="bi bi-activity"></i> SOC & Voltage</div>
-  <div class="bb-card-body"><div class="chart-wrap" style="height:210px"><canvas id="h-soc"></canvas></div></div>
+<!-- Charts -->
+<div class="row g-3 mb-3">
+  <div class="col-12">
+    <div class="chart-card">
+      <div class="chart-title"><i class="bi bi-battery-half me-1"></i>State of Charge (%)</div>
+      <canvas id="h-soc" height="60"></canvas>
+    </div>
+  </div>
 </div>
 <div class="row g-3 mb-3">
-  <div class="col-md-6">
-    <div class="bb-card">
-      <div class="bb-card-header"><i class="bi bi-lightning"></i> Current (A)</div>
-      <div class="bb-card-body"><div class="chart-wrap" style="height:190px"><canvas id="h-curr"></canvas></div></div>
+  <div class="col-lg-6">
+    <div class="chart-card">
+      <div class="chart-title"><i class="bi bi-lightning me-1"></i>Pack Voltage (V)</div>
+      <canvas id="h-voltage" height="80"></canvas>
     </div>
   </div>
-  <div class="col-md-6">
-    <div class="bb-card">
-      <div class="bb-card-header"><i class="bi bi-thermometer"></i> Temperature (°C)</div>
-      <div class="bb-card-body"><div class="chart-wrap" style="height:190px"><canvas id="h-temp"></canvas></div></div>
+  <div class="col-lg-6">
+    <div class="chart-card">
+      <div class="chart-title"><i class="bi bi-activity me-1"></i>Current (A)</div>
+      <canvas id="h-current" height="80"></canvas>
     </div>
   </div>
 </div>
-<div class="bb-card mb-3">
-  <div class="bb-card-header"><i class="bi bi-bar-chart"></i> Cell Voltage Spread</div>
-  <div class="bb-card-body"><div class="chart-wrap" style="height:190px"><canvas id="h-cells"></canvas></div></div>
-</div>
-
-<!-- ── Fault log ── -->
-<div class="bb-card mb-3">
-  <div class="bb-card-header">
-    <i class="bi bi-exclamation-triangle"></i> Fault Log
-    <span class="ms-1 mono" style="font-size:.7rem;color:var(--text-3)">({{ errors|length }})</span>
-  </div>
-  <div class="bb-card-body p-0">
-    {% if errors %}
-    <table class="table table-sm bb-table mb-0">
-      <thead><tr><th>Timestamp</th><th>Error</th></tr></thead>
-      <tbody>
-        {% for e in errors %}
-        <tr>
-          <td>{{ e.ts }}</td>
-          <td><span class="bb-badge badge-err">{{ e.error }}</span></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <div class="p-3 mono" style="font-size:.8rem;color:var(--text-3)">
-      <span class="bb-badge badge-ok">✓ No faults in this range</span>
+<div class="row g-3 mb-3">
+  <div class="col-lg-6">
+    <div class="chart-card">
+      <div class="chart-title"><i class="bi bi-thermometer me-1"></i>Temperature (°C)</div>
+      <canvas id="h-temp" height="80"></canvas>
     </div>
-    {% endif %}
+  </div>
+  <div class="col-lg-6">
+    <div class="chart-card">
+      <div class="chart-title"><i class="bi bi-arrows-collapse me-1"></i>Cell Delta (mV)</div>
+      <canvas id="h-delta" height="80"></canvas>
+    </div>
   </div>
 </div>
 
-<!-- ── Export ── -->
-<div class="bb-card">
-  <div class="bb-card-header"><i class="bi bi-download"></i> Export This Range</div>
-  <div class="bb-card-body">
-    <p style="font-size:.85rem;color:var(--text-2)">
-      Download all records for: <strong>{{ range_label }}</strong>
-    </p>
-    <button class="btn btn-sm btn-success d-flex align-items-center gap-2"
-            onclick="downloadRange()">
-      <i class="bi bi-filetype-csv"></i>
-      <span class="mono" style="font-size:.8rem">Download CSV</span>
-    </button>
+<!-- Data table summary -->
+<div class="chart-card mb-3">
+  <div class="chart-title"><i class="bi bi-table me-1"></i>Summary Stats for Selected Range</div>
+  <div id="stats-table" class="row g-3 mt-1">
+    <div class="col-12 text-center" style="color:var(--muted);font-family:var(--font-mono);font-size:0.75rem;">
+      Load a range to see summary stats
+    </div>
   </div>
 </div>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
-const gridColor = '#e2e5ea';
-(async () => {
-  const res  = await fetch(`/api/snapshots?start={{ range_start }}&end={{ range_end }}&max_points=600`);
-  const d    = await res.json();
-  const rows = d.rows || [];
-  const ts   = rows.map(r => new Date(r.ts + (r.ts.endsWith('Z') ? '' : 'Z')));
-  const scaleX = { type: 'time', grid: { color: gridColor }, ticks: { maxTicksLimit: 8 } };
+Chart.defaults.color = '#6b7f99';
+Chart.defaults.borderColor = '#1f2d42';
+Chart.defaults.font.family = "'JetBrains Mono', monospace";
 
-  new Chart(document.getElementById('h-soc'), {
+function makeLineChart(id, label, color, extraOpts = {}) {
+  return new Chart(document.getElementById(id).getContext('2d'), {
     type: 'line',
-    data: { datasets: [
-      { label: 'SOC %', data: rows.map((r,i)=>({x:ts[i],y:r.soc_percent})),
-        borderColor:'#16a34a',backgroundColor:'#dcfce780',fill:true,borderWidth:2,pointRadius:0,tension:.3,yAxisID:'y'},
-      { label: 'Voltage V', data: rows.map((r,i)=>({x:ts[i],y:r.total_voltage})),
-        borderColor:'#1d72e8',backgroundColor:'transparent',borderWidth:1.5,pointRadius:0,tension:.3,yAxisID:'y2',borderDash:[4,3]}
-    ]},
-    options: { responsive:true, maintainAspectRatio:false, animation:false,
-      plugins:{legend:{labels:{boxWidth:10,font:{size:11}}}},
-      scales:{x:scaleX,y:{grid:{color:gridColor},title:{display:true,text:'%',color:'#9ca3af'}},
-              y2:{position:'right',grid:{drawOnChartArea:false},title:{display:true,text:'V',color:'#9ca3af'}}}
+    data: { labels: [], datasets: [{ label, data: [], borderColor: color, backgroundColor: color + '18', tension: 0.3, fill: true, pointRadius: 0, borderWidth: 1.5 }] },
+    options: {
+      animation: false,
+      responsive: true,
+      scales: {
+        x: { grid: { color: '#1f2d42' }, ticks: { maxTicksLimit: 8, maxRotation: 0 } },
+        y: { grid: { color: '#1f2d42' }, ...extraOpts },
+      },
+      plugins: { legend: { display: false } }
     }
   });
-
-  for (const [id, key, color, bg] of [
-    ['h-curr','current','#1d72e8','#e8f0fd80'],
-    ['h-temp','highest_temp','#d97706','#fef3c780'],
-  ]) {
-    new Chart(document.getElementById(id), {
-      type:'line',
-      data:{datasets:[{label:key,data:rows.map((r,i)=>({x:ts[i],y:r[key]})),
-        borderColor:color,backgroundColor:bg,fill:true,borderWidth:2,pointRadius:0,tension:.3}]},
-      options:{responsive:true,maintainAspectRatio:false,animation:false,
-        plugins:{legend:{display:false}},
-        scales:{x:scaleX,y:{grid:{color:gridColor}}}}
-    });
-  }
-
-  new Chart(document.getElementById('h-cells'), {
-    type:'line',
-    data:{datasets:[
-      {label:'High V',data:rows.map((r,i)=>({x:ts[i],y:r.highest_voltage})),
-        borderColor:'#16a34a',backgroundColor:'transparent',borderWidth:2,pointRadius:0,tension:.3},
-      {label:'Low V',data:rows.map((r,i)=>({x:ts[i],y:r.lowest_voltage})),
-        borderColor:'#d97706',backgroundColor:'#fef3c750',fill:'-1',borderWidth:2,pointRadius:0,tension:.3}
-    ]},
-    options:{responsive:true,maintainAspectRatio:false,animation:false,
-      plugins:{legend:{labels:{boxWidth:10,font:{size:11}}}},
-      scales:{x:scaleX,y:{grid:{color:gridColor},title:{display:true,text:'V',color:'#9ca3af'}}}}
-  });
-})();
-
-function downloadRange() {
-  const tzOffset = new Date().getTimezoneOffset();
-  const url = `/download/csv?start={{ range_start }}&end={{ range_end }}&tz_offset=${tzOffset}`;
-  window.location = url;
 }
+
+const charts = {
+  soc:     makeLineChart('h-soc',     'SOC (%)',        '#00e5a0', { min: 0, max: 100 }),
+  voltage: makeLineChart('h-voltage', 'Voltage (V)',    '#00e5a0'),
+  current: makeLineChart('h-current', 'Current (A)',    '#ffb020'),
+  temp:    makeLineChart('h-temp',    'Temperature (°C)','#ff8040'),
+  delta:   makeLineChart('h-delta',   'Cell Delta (mV)','#c084fc'),
+};
+
+function fmtLabel(iso) {
+  return new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function loadChart(chart, labels, data) {
+  chart.data.labels = labels;
+  chart.data.datasets[0].data = data;
+  chart.update('none');
+}
+
+let currentStart = null, currentEnd = null;
+
+async function loadData(startIso, endIso) {
+  currentStart = startIso;
+  currentEnd = endIso;
+  const url = `/api/history?start=${encodeURIComponent(startIso)}&end=${encodeURIComponent(endIso)}&limit=2000`;
+  const resp = await fetch(url);
+  if (!resp.ok) { alert('Failed to load history'); return; }
+  const { rows, count } = await resp.json();
+
+  document.getElementById('range-info').textContent =
+    `${count} data points · ${new Date(startIso).toLocaleString()} → ${new Date(endIso).toLocaleString()}`;
+
+  const labels = rows.map(r => fmtLabel(r.ts));
+  loadChart(charts.soc,     labels, rows.map(r => r.soc?.soc_percent));
+  loadChart(charts.voltage, labels, rows.map(r => r.soc?.total_voltage));
+  loadChart(charts.current, labels, rows.map(r => r.soc?.current));
+  loadChart(charts.temp,    labels, rows.map(r => r.temperature_range?.highest_temperature));
+  loadChart(charts.delta,   labels, rows.map(r => {
+    const h = r.cell_voltage_range?.highest_voltage || 0;
+    const l = r.cell_voltage_range?.lowest_voltage || 0;
+    return +((h - l) * 1000).toFixed(2);
+  }));
+
+  // Summary stats
+  if (rows.length > 0) {
+    const socs   = rows.map(r => r.soc?.soc_percent).filter(v => v != null);
+    const volts  = rows.map(r => r.soc?.total_voltage).filter(v => v != null);
+    const temps  = rows.map(r => r.temperature_range?.highest_temperature).filter(v => v != null);
+    const deltas = rows.map(r => {
+      const h = r.cell_voltage_range?.highest_voltage || 0;
+      const l = r.cell_voltage_range?.lowest_voltage || 0;
+      return (h - l) * 1000;
+    }).filter(v => v != null);
+
+    const mn = a => (a.reduce((s, v) => s + v, 0) / a.length).toFixed(2);
+    const mx = a => Math.max(...a).toFixed(2);
+    const mi = a => Math.min(...a).toFixed(2);
+
+    document.getElementById('stats-table').innerHTML = `
+      ${statCol('SOC', mi(socs) + '%', mn(socs) + '%', mx(socs) + '%')}
+      ${statCol('Voltage', mi(volts) + 'V', mn(volts) + 'V', mx(volts) + 'V')}
+      ${statCol('Temperature', mi(temps) + '°C', mn(temps) + '°C', mx(temps) + '°C')}
+      ${statCol('Cell Delta', mi(deltas) + 'mV', mn(deltas) + 'mV', mx(deltas) + 'mV')}
+    `;
+  }
+}
+
+function statCol(label, min, avg, max) {
+  return `<div class="col-6 col-md-3">
+    <div class="stat-card text-center">
+      <div class="label">${label}</div>
+      <div style="font-size:0.75rem;font-family:var(--font-mono);color:var(--muted);margin-bottom:0.3rem;">
+        <span style="color:var(--danger);">↓ ${min}</span> &nbsp;
+        <span style="color:var(--brand);">~ ${avg}</span> &nbsp;
+        <span style="color:var(--warn);">↑ ${max}</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+// Quick range buttons
+let activeHours = 1;
+document.querySelectorAll('#quick-range button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#quick-range button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const h = btn.dataset.hours;
+    if (h === 'custom') {
+      document.getElementById('custom-range').style.display = 'block';
+      activeHours = 'custom';
+    } else {
+      document.getElementById('custom-range').style.display = 'none';
+      activeHours = +h;
+    }
+  });
+});
+
+document.getElementById('btn-load').addEventListener('click', () => {
+  const now = new Date();
+  let start, end = now;
+  if (activeHours === 'custom') {
+    const sv = document.getElementById('custom-start').value;
+    const ev = document.getElementById('custom-end').value;
+    if (!sv || !ev) { alert('Please select start and end dates'); return; }
+    start = new Date(sv);
+    end = new Date(ev);
+  } else {
+    start = new Date(now - activeHours * 3600 * 1000);
+  }
+  loadData(start.toISOString(), end.toISOString());
+});
+
+// Download links
+function buildDownloadUrl(fmt) {
+  if (!currentStart || !currentEnd) return '#';
+  return `/api/download/${fmt}?start=${encodeURIComponent(currentStart)}&end=${encodeURIComponent(currentEnd)}`;
+}
+document.getElementById('dl-csv').addEventListener('click', e => {
+  e.preventDefault();
+  if (!currentStart) { alert('Load a range first'); return; }
+  window.location = buildDownloadUrl('csv');
+});
+document.getElementById('dl-json').addEventListener('click', e => {
+  e.preventDefault();
+  if (!currentStart) { alert('Load a range first'); return; }
+  window.location = buildDownloadUrl('json');
+});
+
+// Also update sidebar conn status on this page
+const socket = io('/live');
+socket.on('connect', () => {
+  document.getElementById('conn-dot').className = 'conn-dot live';
+  document.getElementById('conn-text').textContent = 'Live';
+});
+socket.on('disconnect', () => {
+  document.getElementById('conn-dot').className = 'conn-dot err';
+  document.getElementById('conn-text').textContent = 'Disconnected';
+});
+
+// Auto-load 1h on page load
+document.getElementById('btn-load').click();
 </script>
 {% endblock %}

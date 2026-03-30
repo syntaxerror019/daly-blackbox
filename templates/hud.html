@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>BMS HUD</title>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;700;900&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
+  <style>
+    /* =============================================
+       HUD — High-visibility sunlight-optimised
+       White/yellow on deep navy. Max contrast.
+       ============================================= */
+    :root {
+      --bg:     #0b1120;
+      --card:   #121d30;
+      --border: #1e3050;
+      --text:   #ffffff;
+      --hi:     #ffe54c;        /* Primary accent — high-vis yellow */
+      --grn:    #4dffb8;        /* Good/charged */
+      --red:    #ff4444;        /* Alert */
+      --orn:    #ff9020;        /* Warning */
+      --muted:  rgba(255,255,255,0.45);
+      --font-d: 'Barlow Condensed', sans-serif;
+      --font-m: 'JetBrains Mono', monospace;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-d);
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .hud {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-rows: auto 1fr auto;
+      gap: 6px;
+      padding: 6px;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    /* TOP BAR - spans full width */
+    .top-bar {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.4rem 1rem;
+    }
+    .top-bar .brand {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+    .top-bar .conn-live {
+      display: flex; align-items: center; gap: 0.4rem;
+      font-family: var(--font-m);
+      font-size: 0.65rem;
+      color: var(--muted);
+    }
+    .conn-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+    .conn-dot.live { background: var(--grn); box-shadow: 0 0 8px var(--grn); animation: blink 2s infinite; }
+    .conn-dot.err  { background: var(--red); box-shadow: 0 0 8px var(--red); }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    /* BIG METRIC CARDS */
+    .metric-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 0.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .metric-card .m-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      color: var(--muted);
+      margin-bottom: 0.1rem;
+    }
+    .metric-card .m-val {
+      font-size: clamp(2.8rem, 8vw, 5.5rem);
+      font-weight: 900;
+      line-height: 1;
+      color: var(--hi);
+      font-family: var(--font-d);
+    }
+    .metric-card .m-unit {
+      font-size: clamp(0.9rem, 2.5vw, 1.4rem);
+      color: var(--muted);
+      font-weight: 700;
+      margin-left: 0.1em;
+    }
+    .metric-card .m-sub {
+      font-size: clamp(0.65rem, 1.5vw, 0.85rem);
+      color: var(--muted);
+      margin-top: 0.2rem;
+      font-family: var(--font-m);
+    }
+    .metric-card.alert-warn { border-color: var(--orn); background: rgba(255,144,32,0.08); }
+    .metric-card.alert-crit { border-color: var(--red); background: rgba(255,68,68,0.1); animation: flash 1s infinite; }
+    @keyframes flash { 0%,100%{border-color:var(--red)} 50%{border-color:transparent} }
+
+    /* SOC gauge card */
+    .soc-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 0.5rem;
+      position: relative;
+    }
+    .soc-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.15em; color: var(--muted); margin-bottom: 0.25rem; }
+    .soc-num { font-size: clamp(3rem, 9vw, 6rem); font-weight: 900; line-height: 1; }
+    .soc-unit { font-size: clamp(1rem, 2.5vw, 1.5rem); color: var(--muted); font-weight: 700; margin-left: 0.1em; }
+    .soc-bar-wrap { width: 90%; height: 10px; background: rgba(255,255,255,0.1); border-radius: 5px; margin-top: 0.5rem; overflow: hidden; }
+    .soc-bar { height: 100%; border-radius: 5px; transition: width 0.5s, background 0.3s; }
+
+    /* Cell voltage card */
+    .cell-card {
+      grid-column: 1 / -1;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.5rem 0.75rem;
+    }
+    .cell-card .c-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.4rem;
+    }
+    .cell-card .c-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+    }
+    .cell-card .c-delta {
+      font-family: var(--font-m);
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--hi);
+    }
+    .cells-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 3px;
+    }
+    .cell-item {
+      flex: 1;
+      min-width: 28px;
+      max-width: 48px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    }
+    .cell-item .cn {
+      font-size: 0.5rem;
+      color: var(--muted);
+      font-family: var(--font-m);
+    }
+    .cell-item .cv-bar-bg {
+      width: 100%;
+      height: 30px;
+      background: rgba(255,255,255,0.07);
+      border-radius: 3px;
+      overflow: hidden;
+      display: flex;
+      align-items: flex-end;
+    }
+    .cell-item .cv-bar {
+      width: 100%;
+      border-radius: 3px;
+      transition: height 0.4s;
+    }
+    .cell-item .cv-val {
+      font-size: 0.5rem;
+      font-family: var(--font-m);
+      color: var(--text);
+    }
+
+    /* Error strip */
+    .err-strip {
+      grid-column: 1 / -1;
+      background: rgba(255,68,68,0.12);
+      border: 1px solid var(--red);
+      border-radius: 8px;
+      padding: 0.3rem 0.75rem;
+      font-size: 0.75rem;
+      font-family: var(--font-m);
+      color: var(--red);
+      display: none;
+    }
+    .err-strip.active { display: block; animation: flash-bg 1s infinite; }
+    @keyframes flash-bg { 0%,100%{background:rgba(255,68,68,0.12)} 50%{background:rgba(255,68,68,0.25)} }
+
+    /* Time display */
+    #hud-time {
+      font-family: var(--font-m);
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+
+<div class="hud">
+
+  <!-- TOP BAR -->
+  <div class="top-bar">
+    <span class="brand">⚡ BMS HUD</span>
+    <span id="hud-time">—</span>
+    <div class="conn-live">
+      <span class="conn-dot" id="hud-dot"></span>
+      <span id="hud-conn">Connecting…</span>
+    </div>
+  </div>
+
+  <!-- SOC -->
+  <div class="soc-card" id="card-soc">
+    <div class="soc-label">State of Charge</div>
+    <div style="display:flex;align-items:baseline;">
+      <div class="soc-num" id="h-soc">—</div>
+      <div class="soc-unit">%</div>
+    </div>
+    <div class="soc-bar-wrap">
+      <div class="soc-bar" id="h-soc-bar" style="width:0%;background:var(--grn);"></div>
+    </div>
+  </div>
+
+  <!-- Voltage -->
+  <div class="metric-card" id="card-volt">
+    <div class="m-label">Pack Voltage</div>
+    <div style="display:flex;align-items:baseline;">
+      <div class="m-val" id="h-volt">—</div>
+      <div class="m-unit">V</div>
+    </div>
+    <div class="m-sub" id="h-volt-sub">—</div>
+  </div>
+
+  <!-- Current -->
+  <div class="metric-card" id="card-cur">
+    <div class="m-label">Current</div>
+    <div style="display:flex;align-items:baseline;">
+      <div class="m-val" id="h-cur">—</div>
+      <div class="m-unit">A</div>
+    </div>
+    <div class="m-sub" id="h-cur-sub">—</div>
+  </div>
+
+  <!-- Temperature -->
+  <div class="metric-card" id="card-temp">
+    <div class="m-label">Temperature</div>
+    <div style="display:flex;align-items:baseline;">
+      <div class="m-val" id="h-temp">—</div>
+      <div class="m-unit">°C</div>
+    </div>
+    <div class="m-sub" id="h-temp-sub">—</div>
+  </div>
+
+  <!-- Cell delta -->
+  <div class="metric-card" id="card-delta">
+    <div class="m-label">Cell Δ</div>
+    <div style="display:flex;align-items:baseline;">
+      <div class="m-val" id="h-delta" style="font-size:clamp(2rem,6vw,4rem);">—</div>
+      <div class="m-unit">mV</div>
+    </div>
+    <div class="m-sub" id="h-delta-sub">—</div>
+  </div>
+
+  <!-- Cycles / Capacity -->
+  <div class="metric-card">
+    <div class="m-label">Cycles</div>
+    <div class="m-val" id="h-cycles" style="color:var(--grn);font-size:clamp(2rem,6vw,4.5rem);">—</div>
+    <div class="m-sub">Cap: <span id="h-cap">—</span> Ah</div>
+  </div>
+
+  <!-- Errors strip -->
+  <div class="err-strip" id="err-strip">⚠ <span id="err-text"></span></div>
+
+  <!-- Cell bars -->
+  <div class="cell-card">
+    <div class="c-header">
+      <div class="c-title">Individual Cell Voltages</div>
+      <div class="c-delta">Δ <span id="h-cv-delta">—</span> mV · Hi: <span id="h-cv-hi">—</span>V #<span id="h-cv-hi-n">—</span> · Lo: <span id="h-cv-lo">—</span>V #<span id="h-cv-lo-n">—</span></div>
+    </div>
+    <div class="cells-grid" id="h-cells"></div>
+  </div>
+
+</div>
+
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+// Time display
+setInterval(() => {
+  document.getElementById('hud-time').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}, 1000);
+
+const CELL_MIN = {{ config.CELL_VOLTAGE_MIN_WARN }};
+const CELL_MAX = {{ config.CELL_VOLTAGE_MAX_WARN }};
+const TEMP_MAX = {{ config.TEMP_MAX_WARN }};
+const SOC_MIN  = {{ config.SOC_MIN_WARN }};
+
+function cellColor(v) {
+  if (v <= CELL_MIN) return 'var(--red)';
+  if (v >= CELL_MAX) return 'var(--orn)';
+  return 'var(--grn)';
+}
+
+function socColor(pct) {
+  if (pct <= SOC_MIN) return 'var(--red)';
+  if (pct <= 20) return 'var(--orn)';
+  return 'var(--grn)';
+}
+
+function alertCard(id, condition, level) {
+  const el = document.getElementById(id);
+  el.classList.remove('alert-warn', 'alert-crit');
+  if (condition === 'warn') el.classList.add('alert-warn');
+  if (condition === 'crit') el.classList.add('alert-crit');
+}
+
+function updateHUD(data) {
+  const soc = data.soc || {};
+  const cvr = data.cell_voltage_range || {};
+  const tr  = data.temperature_range || {};
+  const ms  = data.mosfet_status || {};
+  const st  = data.status || {};
+  const errs = data.errors || [];
+  const cvs = data.cell_voltages || {};
+
+  // SOC
+  const socPct = soc.soc_percent ?? 0;
+  document.getElementById('h-soc').textContent = socPct.toFixed(1);
+  const socBar = document.getElementById('h-soc-bar');
+  socBar.style.width = socPct + '%';
+  socBar.style.background = socColor(socPct);
+  alertCard('card-soc', socPct <= SOC_MIN ? 'crit' : socPct <= 20 ? 'warn' : '');
+
+  // Voltage
+  document.getElementById('h-volt').textContent = (soc.total_voltage ?? 0).toFixed(2);
+  document.getElementById('h-volt-sub').textContent = `${st.cells ?? '—'} cells`;
+
+  // Current
+  const cur = soc.current ?? 0;
+  document.getElementById('h-cur').textContent = Math.abs(cur).toFixed(1);
+  document.getElementById('h-cur-sub').textContent = cur > 0.5 ? '▲ Charging' : cur < -0.5 ? '▼ Discharging' : '● Idle';
+  document.getElementById('card-cur').querySelector('.m-val').style.color = cur < -0.5 ? 'var(--orn)' : cur > 0.5 ? 'var(--grn)' : 'var(--hi)';
+
+  // Temperature
+  const temp = tr.highest_temperature ?? 0;
+  document.getElementById('h-temp').textContent = temp.toFixed(0);
+  document.getElementById('h-temp-sub').textContent = `Low: ${tr.lowest_temperature ?? '—'}°C`;
+  alertCard('card-temp', temp >= TEMP_MAX ? 'crit' : temp >= TEMP_MAX - 5 ? 'warn' : '');
+  document.getElementById('h-temp').style.color = temp >= TEMP_MAX ? 'var(--red)' : temp >= TEMP_MAX - 5 ? 'var(--orn)' : 'var(--hi)';
+
+  // Cell delta
+  const hiV = cvr.highest_voltage || 0;
+  const loV = cvr.lowest_voltage || 0;
+  const delta = (hiV - loV) * 1000;
+  document.getElementById('h-delta').textContent = delta.toFixed(1);
+  document.getElementById('h-delta-sub').textContent = `Hi #${cvr.highest_cell ?? '—'} · Lo #${cvr.lowest_cell ?? '—'}`;
+  alertCard('card-delta', delta > 50 ? 'crit' : delta > 20 ? 'warn' : '');
+
+  // Cell voltage header
+  document.getElementById('h-cv-delta').textContent = delta.toFixed(1);
+  document.getElementById('h-cv-hi').textContent = hiV.toFixed(3);
+  document.getElementById('h-cv-hi-n').textContent = cvr.highest_cell ?? '—';
+  document.getElementById('h-cv-lo').textContent = loV.toFixed(3);
+  document.getElementById('h-cv-lo-n').textContent = cvr.lowest_cell ?? '—';
+
+  // Cycles
+  document.getElementById('h-cycles').textContent = st.cycles ?? '—';
+  document.getElementById('h-cap').textContent = ms.capacity_ah?.toFixed(2) ?? '—';
+
+  // Errors
+  const errStrip = document.getElementById('err-strip');
+  if (errs.length > 0) {
+    errStrip.classList.add('active');
+    document.getElementById('err-text').textContent = errs.join(' · ');
+  } else {
+    errStrip.classList.remove('active');
+  }
+
+  // Cell bars
+  const entries = Object.entries(cvs).map(([k, v]) => ({ n: +k, v: +v })).sort((a, b) => a.n - b.n);
+  const barMin = 3.5, barMax = 3.9;
+  const grid = document.getElementById('h-cells');
+  if (grid.children.length !== entries.length) {
+    grid.innerHTML = entries.map(({ n }) => `
+      <div class="cell-item">
+        <div class="cn">${n}</div>
+        <div class="cv-bar-bg"><div class="cv-bar" id="hcb-${n}" style="height:0%;"></div></div>
+        <div class="cv-val" id="hcv-${n}">—</div>
+      </div>
+    `).join('');
+  }
+  entries.forEach(({ n, v }) => {
+    const pct = Math.min(100, Math.max(0, ((v - barMin) / (barMax - barMin)) * 100));
+    const bar = document.getElementById('hcb-' + n);
+    const val = document.getElementById('hcv-' + n);
+    if (bar) { bar.style.height = pct + '%'; bar.style.background = cellColor(v); }
+    if (val) val.textContent = v.toFixed(3);
+  });
+}
+
+// WebSocket
+const socket = io('/live');
+socket.on('connect', () => {
+  document.getElementById('hud-dot').className = 'conn-dot live';
+  document.getElementById('hud-conn').textContent = 'Live';
+});
+socket.on('disconnect', () => {
+  document.getElementById('hud-dot').className = 'conn-dot err';
+  document.getElementById('hud-conn').textContent = 'No Signal';
+});
+socket.on('bms_update', ({ data }) => updateHUD(data));
+</script>
+</body>
+</html>

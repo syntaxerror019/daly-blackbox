@@ -1,89 +1,102 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Login — BMS Black Box</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@700;800&family=DM+Mono:wght@400&display=swap" rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BMS Monitor · Login</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
   <style>
+    :root {
+      --brand: #00e5a0;
+      --bg: #0a0d12;
+      --surface: #111720;
+      --border: #1f2d42;
+      --muted: #6b7f99;
+    }
     body {
-      background: #f0f2f5; min-height: 100vh;
-      display: flex; align-items: center; justify-content: center;
-      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      font-family: 'Syne', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
-    .login-wrap { width: 100%; max-width: 380px; padding: 16px; }
-    .login-card {
-      background: #fff; border: 1px solid #e2e5ea;
-      border-radius: 14px; overflow: hidden;
-      box-shadow: 0 4px 24px rgba(0,0,0,.08);
+    .login-box {
+      width: 100%;
+      max-width: 380px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2.5rem 2rem;
     }
-    .login-top {
-      background: linear-gradient(135deg, #1d72e8 0%, #1558c0 100%);
-      padding: 28px 28px 24px; text-align: center;
+    .logo {
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: var(--brand);
+      margin-bottom: 0.25rem;
     }
-    .login-icon {
-      width: 48px; height: 48px; border-radius: 12px;
-      background: rgba(255,255,255,.2); margin: 0 auto 12px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 1.4rem; color: #fff;
+    .subtitle {
+      font-size: 0.7rem;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 2rem;
     }
-    .login-title { font-family: 'Sora', sans-serif; font-weight: 800; font-size: 1.3rem; color: #fff; }
-    .login-sub { font-size: .75rem; color: rgba(255,255,255,.7); margin-top: 3px; }
-    .login-body { padding: 24px 28px 28px; }
-    .form-label { font-size: .75rem; font-weight: 600; color: #374151; margin-bottom: 5px; }
     .form-control {
-      border: 1px solid #d1d5db; border-radius: 8px;
-      padding: 10px 12px; font-size: .875rem; color: #111;
-      background: #f9fafb;
+      background: #0a0d12;
+      border-color: var(--border);
+      color: #e2eaf5;
+      font-family: 'JetBrains Mono', monospace;
     }
     .form-control:focus {
-      border-color: #1d72e8; box-shadow: 0 0 0 3px rgba(29,114,232,.12);
-      background: #fff;
+      background: #0a0d12;
+      border-color: var(--brand);
+      color: #e2eaf5;
+      box-shadow: 0 0 0 2px rgba(0,229,160,0.15);
     }
-    .btn-login {
-      background: #1d72e8; border: none; color: #fff;
-      font-weight: 600; font-size: .9rem; padding: 11px;
-      border-radius: 8px; width: 100%; cursor: pointer;
-      transition: background .15s;
+    .btn-brand {
+      background: var(--brand);
+      color: #0a0d12;
+      font-weight: 700;
+      border: none;
+      width: 100%;
+      padding: 0.6rem;
+      border-radius: 8px;
+      font-family: 'Syne', sans-serif;
+      font-size: 0.9rem;
+      transition: opacity 0.15s;
     }
-    .btn-login:hover { background: #1558c0; }
-    .alert-err {
-      background: #fef2f2; border: 1px solid #fca5a5;
-      color: #dc2626; border-radius: 8px;
-      font-size: .8rem; padding: 9px 12px; margin-bottom: 16px;
-    }
-    .footer-note { text-align: center; margin-top: 16px; font-size: .7rem; color: #9ca3af; }
+    .btn-brand:hover { opacity: 0.85; }
+    .form-label { font-size: 0.75rem; font-family: 'JetBrains Mono', monospace; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
   </style>
 </head>
 <body>
-  <div class="login-wrap">
-    <div class="login-card">
-      <div class="login-top">
-        <div class="login-icon"><i class="bi bi-battery-charging"></i></div>
-        <div class="login-title">BMS Black Box</div>
-        <div class="login-sub">Daly BMS Data Logger · Secure Access</div>
-      </div>
-      <div class="login-body">
-        {% if error %}
-        <div class="alert-err"><i class="bi bi-exclamation-triangle-fill me-2"></i>{{ error }}</div>
-        {% endif %}
-        <form method="POST">
-          <div class="mb-3">
-            <label class="form-label">Username</label>
-            <input type="text" name="username" class="form-control" autocomplete="username" autofocus required>
-          </div>
-          <div class="mb-4">
-            <label class="form-label">Password</label>
-            <input type="password" name="password" class="form-control" autocomplete="current-password" required>
-          </div>
-          <button type="submit" class="btn-login">Sign In →</button>
-        </form>
-      </div>
+  <div class="login-box">
+    <div class="logo"><i class="bi bi-lightning-charge-fill"></i> BMS Monitor</div>
+    <div class="subtitle">Daly BMS · Secure Access</div>
+
+    {% if error %}
+    <div class="alert alert-danger py-2" style="font-size:0.8rem; border-radius:8px;">
+      <i class="bi bi-exclamation-triangle me-1"></i> {{ error }}
     </div>
-    <div class="footer-note">Configured for {{ config.BMS_CELL_COUNT if config else '24' }}S LiFePO₄</div>
+    {% endif %}
+
+    <form method="POST">
+      <div class="mb-3">
+        <label class="form-label">Username</label>
+        <input type="text" name="username" class="form-control" autofocus autocomplete="username">
+      </div>
+      <div class="mb-4">
+        <label class="form-label">Password</label>
+        <input type="password" name="password" class="form-control" autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn-brand">Sign In <i class="bi bi-arrow-right ms-1"></i></button>
+    </form>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
 </body>
 </html>

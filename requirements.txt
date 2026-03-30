@@ -1,7 +1,8 @@
 flask>=3.0.0
-flask-login>=0.6.3
 flask-socketio>=5.3.6
+flask-login>=0.6.3
 python-dotenv>=1.0.0
 dalybms
+eventlet>=0.35.2
+SQLAlchemy>=2.0.0
 pyserial>=3.5
-APScheduler>=3.10.4
