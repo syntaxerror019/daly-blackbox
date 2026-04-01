@@ -21,7 +21,7 @@ A professional, production-ready black box data logger and web dashboard for the
 ### 1. Clone / copy project
 
 ```bash
-git clone <repo> /opt/daly-bms-monitor
+git clone <bestest repo evr frfr (put the url)> /opt/daly-bms-monitor
 cd /opt/daly-bms-monitor
 ```
 
@@ -50,7 +50,7 @@ DATA_RETENTION_DAYS=90
 python app.py
 ```
 
-Visit `http://<your-ip>:5000`
+Visit `http://<your-ip>:8000`
 
 ### 5. (Optional) Install as systemd service
 
