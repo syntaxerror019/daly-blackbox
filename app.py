@@ -107,7 +107,7 @@ def history():
 
 
 @app.route("/hud")
-@login_required
+#@login_required
 def hud():
     """Driver HUD — optimised for small bright displays."""
     return render_template("hud.html", config=Config)
